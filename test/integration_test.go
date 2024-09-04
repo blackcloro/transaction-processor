@@ -341,8 +341,6 @@ func (s *IntegrationTestSuite) TestTransactions() {
 				s.Equal(tc.transaction.Amount, successResponse.Transaction.Amount)
 				s.Equal(tc.sourceType, successResponse.Transaction.SourceType)
 				s.NotZero(successResponse.Transaction.ID)
-				s.False(successResponse.Transaction.IsProcessed)
-				s.False(successResponse.Transaction.IsCanceled)
 				s.NotZero(successResponse.Transaction.CreatedAt)
 			}
 		})

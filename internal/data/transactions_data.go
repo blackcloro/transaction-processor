@@ -15,7 +15,7 @@ type Transaction struct {
 	Amount        float64    `json:"amount,string" validate:"required,gt=0"`
 	IsProcessed   bool       `json:"-"`
 	IsCanceled    bool       `json:"-"`
-	CreatedAt     *time.Time `json:"-"`
+	CreatedAt     *time.Time `json:"created_at"`
 	ProcessedAt   *time.Time `json:"-"`
 	CanceledAt    *time.Time `json:"-"`
 }
