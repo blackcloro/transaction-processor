@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/blackcloro/transaction-processor/pkg/logger"
@@ -40,21 +41,34 @@ func (r *TransactionRepository) ProcessTransaction(ctx context.Context, t *data.
 		}
 	}(tx, ctx)
 
-	existingTransaction, err := r.getTransactionByID(ctx, tx, t.TransactionID)
-	if err != nil && !errors.Is(err, ErrNoRows) {
+	var currentBalance float64
+	err = tx.QueryRow(ctx, "SELECT balance FROM account WHERE id = 1").Scan(&currentBalance)
+	if err != nil {
 		return 0, err
 	}
+	existingTransaction, _ := r.getTransactionByID(ctx, tx, t.TransactionID)
 	if existingTransaction != nil {
-		return 0, ErrDuplicateTransaction
+		return currentBalance, ErrDuplicateTransaction
 	}
-
+	// Calculate new balance
+	var newBalance float64
+	switch t.State {
+	case "win":
+	case "lost":
+		if currentBalance < t.Amount {
+			return currentBalance, ErrInsufficientFunds
+		}
+	default:
+		return 0, fmt.Errorf("invalid transaction state: %s", t.State)
+	}
 	// Create new transaction
 	err = r.createTransaction(ctx, tx, t)
 	if err != nil {
 		return 0, err
 	}
+	// Check current balance
 
-	newBalance, err := r.updateAccountBalance(ctx, tx, t.State, t.Amount)
+	newBalance, err = r.updateAccountBalance(ctx, tx, t.State, t.Amount)
 	if err != nil {
 		if errors.Is(err, ErrInsufficientFunds) {
 			// If there are insufficient funds, cancel the transaction
@@ -85,15 +99,12 @@ func (r *TransactionRepository) ProcessTransaction(ctx context.Context, t *data.
 
 func (r *TransactionRepository) getTransactionByID(ctx context.Context, tx pgx.Tx, id string) (*data.Transaction, error) {
 	sql := `
-		SELECT id, transaction_id, source_type, state, amount, is_processed, is_canceled, created_at, processed_at, canceled_at
+		SELECT id
 		FROM transactions
 		WHERE transaction_id = $1
 	`
 	var t data.Transaction
-	err := tx.QueryRow(ctx, sql, id).Scan(
-		&t.ID, &t.TransactionID, &t.SourceType, &t.State, &t.Amount,
-		&t.IsProcessed, &t.IsCanceled, &t.CreatedAt, &t.ProcessedAt, &t.CanceledAt,
-	)
+	err := tx.QueryRow(ctx, sql, id).Scan(&t.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNoRows
