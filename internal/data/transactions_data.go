@@ -9,15 +9,13 @@ import (
 
 type Transaction struct {
 	ID            int64      `json:"id"`
+	AccountID     int64      `json:"account_id"`
 	TransactionID string     `json:"transactionId" validate:"required"`
 	SourceType    string     `json:"source_type" validate:"required,oneof=game server payment"`
 	State         string     `json:"state" validate:"required,oneof=win lost"`
 	Amount        float64    `json:"amount,string" validate:"required,gt=0"`
-	IsProcessed   bool       `json:"-"`
-	IsCanceled    bool       `json:"-"`
-	CreatedAt     *time.Time `json:"created_at"`
-	ProcessedAt   *time.Time `json:"-"`
-	CanceledAt    *time.Time `json:"-"`
+	IsCanceled    bool       `json:"is_canceled"`
+	ProcessedAt   *time.Time `json:"processed_at"`
 }
 
 var validate = validator.New()

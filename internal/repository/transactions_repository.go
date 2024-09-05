@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgconn"
+
 	"github.com/blackcloro/transaction-processor/pkg/logger"
 
 	"github.com/blackcloro/transaction-processor/internal/data"
@@ -18,6 +20,7 @@ var (
 	ErrNoRows               = errors.New("no rows in result set")
 	ErrDuplicateTransaction = errors.New("duplicate transaction")
 	ErrInsufficientFunds    = errors.New("insufficient funds")
+	ErrNumericOverflow      = errors.New("numeric field overflow")
 )
 
 type TransactionRepository struct {
@@ -64,34 +67,24 @@ func (r *TransactionRepository) ProcessTransaction(ctx context.Context, t *data.
 	// Create new transaction
 	err = r.createTransaction(ctx, tx, t)
 	if err != nil {
-		return 0, err
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22003" {
+			return currentBalance, ErrNumericOverflow
+		}
+		return currentBalance, err
 	}
-	// Check current balance
-
+	// Update balance
 	newBalance, err = r.updateAccountBalance(ctx, tx, t.State, t.Amount)
 	if err != nil {
-		if errors.Is(err, ErrInsufficientFunds) {
-			// If there are insufficient funds, cancel the transaction
-			cancelErr := r.markTransactionCanceled(ctx, tx, t.TransactionID)
-			if cancelErr != nil {
-				logger.Error("Failed to cancel transaction", cancelErr)
-				return 0, cancelErr
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return 0, err
-			}
-			return newBalance, ErrInsufficientFunds
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22003" {
+			return currentBalance, ErrNumericOverflow
 		}
-		return 0, err
-	}
-
-	err = r.markTransactionProcessed(ctx, tx, t.TransactionID)
-	if err != nil {
-		return 0, err
+		return currentBalance, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, err
+		return currentBalance, err
 	}
 
 	return newBalance, nil
@@ -116,32 +109,12 @@ func (r *TransactionRepository) getTransactionByID(ctx context.Context, tx pgx.T
 
 func (r *TransactionRepository) createTransaction(ctx context.Context, tx pgx.Tx, t *data.Transaction) error {
 	sql := `
-		INSERT INTO transactions (transaction_id, source_type, state, amount, is_processed, is_canceled, created_at)
-		VALUES ($1, $2, $3, $4, false, false, $5)
-		RETURNING id, created_at
+		INSERT INTO transactions (transaction_id, source_type, state, amount, processed_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, processed_at
 	`
 	now := time.Now()
-	return tx.QueryRow(ctx, sql, t.TransactionID, t.SourceType, t.State, t.Amount, now).Scan(&t.ID, &t.CreatedAt)
-}
-
-func (r *TransactionRepository) markTransactionProcessed(ctx context.Context, tx pgx.Tx, transactionID string) error {
-	sql := `
-		UPDATE transactions
-		SET is_processed = true, processed_at = $1
-		WHERE transaction_id = $2
-	`
-	_, err := tx.Exec(ctx, sql, time.Now(), transactionID)
-	return err
-}
-
-func (r *TransactionRepository) markTransactionCanceled(ctx context.Context, tx pgx.Tx, transactionID string) error {
-	sql := `
-		UPDATE transactions
-		SET is_canceled = true, canceled_at = $1
-		WHERE transaction_id = $2
-	`
-	_, err := tx.Exec(ctx, sql, time.Now(), transactionID)
-	return err
+	return tx.QueryRow(ctx, sql, t.TransactionID, t.SourceType, t.State, t.Amount, now).Scan(&t.ID, &t.ProcessedAt)
 }
 
 func (r *TransactionRepository) updateAccountBalance(ctx context.Context, tx pgx.Tx, state string, amount float64) (float64, error) {
@@ -170,4 +143,78 @@ func (r *TransactionRepository) updateAccountBalance(ctx context.Context, tx pgx
 	}
 
 	return newBalance, nil
+}
+
+func (r *TransactionRepository) PostProcess(ctx context.Context) ([]data.Transaction, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Select and update the 10 latest odd records that are not canceled
+	rows, err := tx.Query(ctx, `
+		WITH numbered_records AS (
+			SELECT id, transaction_id, account_id, amount, state, source_type, processed_at,
+				   ROW_NUMBER() OVER (ORDER BY processed_at DESC) as row_num
+			FROM transactions
+			WHERE is_canceled = false
+		),
+		updated_records AS (
+			UPDATE transactions
+			SET is_canceled = true
+			WHERE id IN (
+				SELECT id
+				FROM numbered_records
+				WHERE id % 2 = 1
+				ORDER BY id
+				LIMIT 10
+			)
+			RETURNING id, transaction_id, amount, state, source_type, processed_at, is_canceled
+		)
+		SELECT * FROM updated_records
+		ORDER BY processed_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query and update transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var canceledTransactions []data.Transaction
+	for rows.Next() {
+		var t data.Transaction
+		if err := rows.Scan(&t.ID, &t.TransactionID, &t.Amount, &t.State, &t.SourceType, &t.ProcessedAt, &t.IsCanceled); err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		canceledTransactions = append([]data.Transaction{t}, canceledTransactions...) // Prepend to reverse order
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over rows: %w", err)
+	}
+
+	// Update account balance
+	for _, t := range canceledTransactions {
+		var balanceChange float64
+		if t.State == "win" {
+			balanceChange = -t.Amount
+		} else {
+			balanceChange = t.Amount
+		}
+
+		_, err := tx.Exec(ctx, `
+			UPDATE account
+			SET balance = balance + $1, version = version + 1, updated_at = NOW()
+			WHERE id = 1
+		`, balanceChange)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update account balance: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return canceledTransactions, nil
 }
