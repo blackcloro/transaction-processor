@@ -4,15 +4,15 @@ services:
     ports:
       - "4000:4000"
     environment:
-      - PORT=4000
-      - ENV=development
-      - TRANSACTIONS_DB_DSN=postgres://transactions:${DB_PASSWORD}@db/transactions?sslmode=disable
-    command: ["./transaction-processor"]
+      - TRANSACTION_PROCESSOR_PORT=4000
+      - TRANSACTION_PROCESSOR_ENV=development
+      - TRANSACTION_PROCESSOR_DB_DSN=postgres://transactions:${DB_PASSWORD}@db/transactions?sslmode=disable
+      - TRANSACTION_PROCESSOR_WORKER_INTERVAL=15s
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v1/livez"]
+      test: [ "CMD", "curl", "-f", "http://localhost:4000/api/v1/livez" ]
       interval: 1m30s
       timeout: 10s
       retries: 3

@@ -15,10 +15,10 @@ func NewPostgresDB(dsn string) (*pgxpool.Pool, error) {
 	}
 
 	// Adjust connection pool settings
-	config.MaxConns = 20                      // Reduced from 100
-	config.MinConns = 5                       // Reduced from 10
-	config.MaxConnLifetime = 30 * time.Minute // Reduced from 1 hour
-	config.MaxConnIdleTime = 5 * time.Minute  // Reduced from 15 minutes
+	config.MaxConns = 20
+	config.MinConns = 5
+	config.MaxConnLifetime = 30 * time.Minute
+	config.MaxConnIdleTime = 5 * time.Minute
 
 	// Use a timeout for the entire connection process
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

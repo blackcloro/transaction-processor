@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgconn"
 
@@ -58,10 +59,31 @@ func (r *PostgresTransactionRepository) GetByID(ctx context.Context, id string) 
 
 func (r *PostgresTransactionRepository) GetLatestOddRecords(ctx context.Context, limit int) ([]*transaction.Transaction, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, transaction_id, account_id, source_type, state, amount, is_canceled, processed_at
-		FROM transactions
-		WHERE id % 2 = 1 AND is_canceled = false
-		ORDER BY processed_at DESC
+		WITH ranked_transactions AS (
+			SELECT 
+				id, 
+				transaction_id, 
+				account_id, 
+				source_type, 
+				state, 
+				amount, 
+				is_canceled, 
+				processed_at,
+				ROW_NUMBER() OVER (ORDER BY processed_at DESC) AS row_num
+			FROM transactions
+			WHERE is_canceled = false
+		)
+		SELECT 
+			id, 
+			transaction_id, 
+			account_id, 
+			source_type, 
+			state, 
+			amount, 
+			is_canceled, 
+			processed_at
+		FROM ranked_transactions
+		WHERE row_num % 2 = 1
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -89,10 +111,47 @@ func (r *PostgresTransactionRepository) GetLatestOddRecords(ctx context.Context,
 }
 
 func (r *PostgresTransactionRepository) MarkAsCanceled(ctx context.Context, ids []string) error {
-	_, err := r.db.Exec(ctx, `
-		UPDATE transactions
-		SET is_canceled = true
-		WHERE transaction_id = ANY($1)
-	`, ids)
-	return err
+	// Start a transaction
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // Rollback in case of error
+
+	// Mark transactions as canceled
+	_, err = tx.Exec(ctx, `
+        UPDATE transactions
+        SET is_canceled = true
+        WHERE transaction_id = ANY($1)
+    `, ids)
+	if err != nil {
+		return fmt.Errorf("failed to mark transactions as canceled: %w", err)
+	}
+
+	// Update account balance
+	_, err = tx.Exec(ctx, `
+        UPDATE account
+        SET balance = balance - COALESCE(
+            (SELECT SUM(
+                CASE 
+                    WHEN state = 'win' THEN amount 
+                    WHEN state = 'lost' THEN -amount
+                END
+            )
+            FROM transactions
+            WHERE transaction_id = ANY($1) AND is_canceled = true),
+            0
+        )
+        WHERE id = 1
+    `, ids)
+	if err != nil {
+		return fmt.Errorf("failed to update account balance: %w", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }

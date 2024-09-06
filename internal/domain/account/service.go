@@ -38,31 +38,3 @@ func (s *Service) GetBalance(ctx context.Context, accountID int64) (float64, err
 	}
 	return account.Balance, nil
 }
-
-//
-//func (s *Service) CheckAndProcessTransaction(ctx context.Context, accountID int64, tx *transaction.Transaction) (float64, error) {
-//	return s.repo.WithTransaction(ctx, func(repo Repository) (float64, error) {
-//		account, err := repo.GetByID(ctx, accountID)
-//		if err != nil {
-//			return 0, err
-//		}
-//
-//		if tx.State == transaction.StateLost && account.Balance < tx.Amount {
-//			return 0, internal.ErrInsufficientFunds
-//		}
-//
-//		newBalance := account.Balance
-//		if tx.State == transaction.StateWin {
-//			newBalance += tx.Amount
-//		} else {
-//			newBalance -= tx.Amount
-//		}
-//
-//		err = repo.UpdateBalance(ctx, accountID, newBalance)
-//		if err != nil {
-//			return 0, err
-//		}
-//
-//		return newBalance, nil
-//	})
-//}

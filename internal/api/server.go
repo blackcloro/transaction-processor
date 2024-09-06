@@ -44,7 +44,7 @@ func NewServer(cfg *config.Config, th *handlers.TransactionHandler) *Server {
 
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.config.Port)
-	logger.Info("Starting server", "env", s.config.Env, "address", addr)
+	logger.Info("Starting server at address", addr)
 	err := s.app.Listen(addr)
 	if err != nil {
 		return err

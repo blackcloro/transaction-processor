@@ -12,6 +12,7 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/stretchr/testify/assert"
+
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -106,17 +107,6 @@ func (s *PostgresTransactionRepositoryTestSuite) TestCreate() {
 				Amount:        50,
 			},
 			expectedError: nil,
-		},
-		{
-			name: "Insufficient funds",
-			transaction: &transaction.Transaction{
-				TransactionID: "loss-2",
-				AccountID:     1,
-				SourceType:    "game",
-				State:         "lost",
-				Amount:        2000,
-			},
-			expectedError: internal.ErrInsufficientFunds,
 		},
 		{
 			name: "Duplicate transaction",

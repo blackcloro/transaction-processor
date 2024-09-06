@@ -1,5 +1,3 @@
-// File: internal/testutil/postgres_container.go
-
 package testutil
 
 import (
@@ -13,8 +11,8 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 
-	_ "github.com/golang-migrate/migrate/v4/database/postgres" // Import postgres driver
-	_ "github.com/golang-migrate/migrate/v4/source/file"       // Import file source driver
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"

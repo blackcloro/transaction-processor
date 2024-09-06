@@ -30,30 +30,3 @@ func (r *PostgresAccountRepository) Update(ctx context.Context, a *account.Accou
 		a.Balance, a.Version, a.UpdatedAt, a.ID)
 	return err
 }
-
-//func (r *PostgresAccountRepository) UpdateBalance(ctx context.Context, id int, amount float64) error {
-//	_, err := r.db.Exec(ctx, "UPDATE account SET balance = $1, updated_at = $3 WHERE id = $4",
-//		amount, time.Now(), id)
-//	return err
-//}
-
-//
-//func (r *PostgresAccountRepository) WithTransaction(ctx context.Context, fn func(account.Repository) (float64, error)) (float64, error) {
-//	tx, err := r.db.Begin(ctx)
-//	if err != nil {
-//		return 0, err
-//	}
-//	defer tx.Rollback(ctx)
-//
-//	txRepo := &PostgresAccountRepository{db: &pgxpool.Pool{Conn: tx}}
-//	result, err := fn(txRepo)
-//	if err != nil {
-//		return 0, err
-//	}
-//
-//	if err := tx.Commit(ctx); err != nil {
-//		return 0, err
-//	}
-//
-//	return result, nil
-//}

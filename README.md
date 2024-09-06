@@ -41,6 +41,61 @@ This application processes incoming requests from 3rd-party providers, managing 
    go run cmd/api/main.go
    ```
 
+### Configuration
+The application is configured using environment variables. See .env.example for all available options. Key configurations:
+
+```
+TRANSACTION_PROCESSOR_PORT: Server port (default: 4000)
+TRANSACTION_PROCESSOR_DB_DSN: Database connection string
+TRANSACTION_PROCESSOR_DB_PASSWORD: Database password (used in docker-compose.yml)
+TRANSACTION_PROCESSOR_WORKER_INTERVAL: Interval for post-processing worker
+```
+
+## Database Inspection
+
+When running the application with Docker Compose, you may want to inspect the database directly. Here's how you can do that:
+
+1. Ensure your Docker containers are running:
+   ```sh
+   docker-compose up -d
+   ```
+
+2. Connect to the PostgreSQL database:
+   ```sh
+   docker-compose exec db psql -U transactions -d transactions
+   ```
+   When prompted for a password, enter the `DB_PASSWORD` value from your `.env` file.
+
+3. Once connected, you can run SQL queries to inspect the data. Here are some useful queries:
+
+    - Check canceled odd records:
+      ```sql
+      SELECT id, transaction_id, account_id, source_type, state, amount, is_canceled, processed_at
+      FROM transactions
+      WHERE id % 2 = 1 AND is_canceled = true
+      ORDER BY processed_at DESC
+      LIMIT 10;
+      ```
+
+    - Check the current account balance:
+      ```sql
+      SELECT * FROM account WHERE id = 1;
+      ```
+
+    - View the most recent transactions:
+      ```sql
+      SELECT * FROM transactions ORDER BY processed_at DESC LIMIT 10;
+      ```
+
+4. To exit the PostgreSQL prompt, type:
+   ```
+   \q
+   ```
+
+Remember to exit the psql prompt when you're done. If you're finished with your Docker environment, you can shut it down with:
+```sh
+docker-compose down
+```
 
 ## API Endpoints
 
