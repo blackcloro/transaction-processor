@@ -9,12 +9,6 @@ This application processes incoming requests from 3rd-party providers, managing 
 - Go 1.20 or later
 - Docker and Docker Compose
 - PostgreSQL 16 or later (if running without Docker)
-
-## Prerequisites
-
-- Go 1.20 or later
-- Docker and Docker Compose
-- PostgreSQL 16 or later (if running without Docker)
 - Migrate CLI tool (for database migrations if running without Docker)
 
 ## Quick Start
